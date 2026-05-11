@@ -86,7 +86,7 @@ def get_respond_keyboard(queue_name: str, user_id: int):
 def get_gift_received_keyboard(queue_name: str, user_id: int):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            "🎁 Герой получен", 
+            "🎁 Герой использован", 
             callback_data=f"gift_{queue_name}_{user_id}"
         )]
     ])
@@ -357,7 +357,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Вы не откликались или уже получили героя", show_alert=True)
             return
         
-        await remove_user_from_queue(queue, user.id, context, reason="подарок получен")
+        await remove_user_from_queue(queue, user.id, context, reason="герой использован")
         
         await query.edit_message_text(
             f"🎁 {user.first_name} получил героя и покинул очередь '{queue_name}'!\n"
