@@ -455,7 +455,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     # ID администраторов (получите у @getmyid_bot)
-    storage.admins = {123456789}  # ЗАМЕНИТЕ НА СВОЙ ID
+    storage.admins = {550712077}  # ЗАМЕНИТЕ НА СВОЙ ID
     
     application = Application.builder().token(os.getenv("BOT_TOKEN")).build()
     
