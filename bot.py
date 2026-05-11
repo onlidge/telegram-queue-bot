@@ -66,6 +66,11 @@ class Storage:
 
 storage = Storage()
 
+# Ручное сопоставление проблемных username → ID
+KNOWN_USERS = {
+    "Dovac_King": 550712077,
+}
+
 # ============ Клавиатуры ============
 
 def get_respond_keyboard(queue_name: str, user_id: int):
@@ -235,6 +240,47 @@ async def process_join(update: Update, context: ContextTypes.DEFAULT_TYPE, queue
     if not queue.is_searching:
         await start_queue_search(queue, context)
 
+async def set_special_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Изменить специального пользователя в существующей очереди"""
+    user_id = update.effective_user.id
+    message = update.effective_message
+    
+    if user_id not in storage.admins:
+        await message.reply_text("❌ Только администраторы могут менять специального пользователя")
+        return
+    
+    if not context.args or len(context.args) < 2:
+        await message.reply_text("Используйте: /setspecial <очередь> @username")
+        return
+    
+    queue_name = context.args[0]
+    special_user_str = context.args[1]
+    chat_id = update.effective_chat.id
+    
+    queue = storage.get_queue(queue_name, chat_id)
+    if not queue:
+        await message.reply_text(f"❌ Очередь '{queue_name}' не найдена")
+        return
+    
+    if not special_user_str.startswith('@'):
+        await message.reply_text("Укажите пользователя через @username")
+        return
+    
+    username = special_user_str[1:]
+    
+    # Проверяем известных пользователей
+    if username in KNOWN_USERS:
+        queue.special_user_id = KNOWN_USERS[username]
+        await message.reply_text(f"✅ Специальный пользователь очереди '{queue_name}' изменён на @{username}")
+        return
+    
+    try:
+        special_user = await context.bot.get_chat(f"@{username}")
+        queue.special_user_id = special_user.id
+        await message.reply_text(f"✅ Специальный пользователь очереди '{queue_name}' изменён на @{username}")
+    except Exception as e:
+        await message.reply_text(f"❌ Не могу найти @{username}. Ошибка: {str(e)}")
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -257,44 +303,34 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Очередь не найдена")
             return
         
+        # ТОЛЬКО тегнутый может откликнуться
         if user.id != target_user_id:
-            await query.answer("❌ Эта кнопка не для вас!", show_alert=True)
+            await query.answer("❌ Эта кнопка только для отмеченного пользователя!", show_alert=True)
             return
         
         queue_user = queue.users.get(user.id)
         if not queue_user or queue_user.state != UserState.TAGGED:
-            await query.answer("❌ Вы не были отмечены в очереди", show_alert=True)
+            await query.answer("❌ Вас не отмечали или время истекло", show_alert=True)
             return
         
         queue_user.state = UserState.RESPONDED
         queue_user.responded_at = datetime.now()
         queue.is_searching = False
         
-        current_jobs = context.job_queue.get_jobs_by_name(
-            f"timeout_{queue_name}_{chat_id}_{user.id}"
-        )
+        current_jobs = context.job_queue.get_jobs_by_name(f"timeout_{queue_name}_{chat_id}_{user.id}")
         for job in current_jobs:
             job.schedule_removal()
         
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"🎉 <a href='tg://user?id={queue.special_user_id}'>Специальный пользователь</a>, "
-                     f"пользователь <a href='tg://user?id={user.id}'>{user.first_name}</a> "
-                     f"откликнулся из очереди '{queue_name}'!",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_gift_received_keyboard(queue.name, user.id)
-            )
-        except Exception as e:
-            print(f"Error notifying special user: {e}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🎉 <a href='tg://user?id={queue.special_user_id}'>Специальный пользователь</a>, "
+                 f"пользователь <a href='tg://user?id={user.id}'>{user.first_name}</a> "
+                 f"откликнулся из очереди '{queue_name}'!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_gift_received_keyboard(queue.name, user.id)
+        )
         
-        try:
-            await query.edit_message_text(
-                f"✅ {user.first_name} откликнулся!",
-                reply_markup=None
-            )
-        except:
-            pass
+        await query.edit_message_text(f"✅ {user.first_name} откликнулся!", reply_markup=None)
         
     elif data.startswith("gift_"):
         parts = data.split("_")
@@ -306,24 +342,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Очередь не найдена")
             return
         
+        # ТОЛЬКО откликнувшийся может нажать
         if user.id != target_user_id:
-            await query.answer("❌ Эта кнопка не для вас!", show_alert=True)
+            await query.answer("❌ Только откликнувшийся может подтвердить получение!", show_alert=True)
             return
         
         queue_user = queue.users.get(user.id)
         if not queue_user or queue_user.state != UserState.RESPONDED:
-            await query.answer("❌ Вы не откликались в очереди", show_alert=True)
+            await query.answer("❌ Вы не откликались или уже получили подарок", show_alert=True)
             return
         
         await remove_user_from_queue(queue, user.id, context, reason="подарок получен")
         
-        try:
-            await query.edit_message_text(
-                f"🎁 {user.first_name} получил подарок и покинул очередь '{queue_name}'!",
-                reply_markup=None
-            )
-        except:
-            pass
+        await query.edit_message_text(
+            f"🎁 {user.first_name} получил подарок и покинул очередь '{queue_name}'!",
+            reply_markup=None
+        )
         
         await start_queue_search(queue, context)
 
@@ -362,23 +396,22 @@ async def create_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     username = special_user_str[1:]
     
+    # Проверяем известных пользователей
+    if username in KNOWN_USERS:
+        special_user_id = KNOWN_USERS[username]
+        storage.create_queue(queue_name, chat_id, special_user_id)
+        await message.reply_text(f"✅ Очередь '{queue_name}' создана!\nСпециальный пользователь: @{username}\nИспользуйте /join {queue_name} для записи")
+        return
+    
     try:
         special_user = await context.bot.get_chat(f"@{username}")
         special_user_id = special_user.id
-        
         storage.create_queue(queue_name, chat_id, special_user_id)
-        
-        await message.reply_text(
-            f"✅ Очередь '{queue_name}' создана!\n"
-            f"Специальный пользователь: @{username}\n"
-            f"Используйте /join {queue_name} для записи"
-        )
+        await message.reply_text(f"✅ Очередь '{queue_name}' создана!\nСпециальный пользователь: @{username}\nИспользуйте /join {queue_name} для записи")
     except Exception as e:
-        await message.reply_text(
-            f"❌ Ошибка поиска @{username}:\n"
-            f"Тип: {type(e).__name__}\n"
-            f"Текст: {str(e)}"
-        )
+        await message.reply_text(f"❌ Не могу найти @{username}. Ошибка: {str(e)}")
+
+
 async def start_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Используйте: /start_search <название_очереди>")
@@ -470,6 +503,7 @@ def main():
     application.add_handler(CommandHandler("join", join_command))
     application.add_handler(CommandHandler("start_search", start_search_command))
     application.add_handler(CommandHandler("create_queue", create_queue))
+    application.add_handler(CommandHandler("setspecial", set_special_user))
     application.add_handler(CommandHandler("queue_info", queue_info))
     application.add_handler(CallbackQueryHandler(button_handler))
     
