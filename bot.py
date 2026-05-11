@@ -37,6 +37,7 @@ class Queue:
     name: str
     chat_id: int
     special_user_id: int
+    special_username: str = ""
     users: Dict[int, QueueUser] = field(default_factory=dict)
     user_order: List[int] = field(default_factory=list)
     current_index: int = 0
@@ -69,6 +70,7 @@ storage = Storage()
 # Ручное сопоставление проблемных username → ID
 KNOWN_USERS = {
     "Dovac_King": 550712077,
+    "dovac_king": 550712077,
 }
 
 # ============ Клавиатуры ============
@@ -107,7 +109,6 @@ async def start_queue_search(queue: Queue, context: ContextTypes.DEFAULT_TYPE):
         return
     
     queue.is_searching = True
-    start_index = queue.current_index
     checked_count = 0
     
     while checked_count < len(queue.user_order):
@@ -271,12 +272,14 @@ async def set_special_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Проверяем известных пользователей
     if username in KNOWN_USERS:
         queue.special_user_id = KNOWN_USERS[username]
+        queue.special_username = username
         await message.reply_text(f"✅ Специальный пользователь очереди '{queue_name}' изменён на @{username}")
         return
     
     try:
         special_user = await context.bot.get_chat(f"@{username}")
         queue.special_user_id = special_user.id
+        queue.special_username = username
         await message.reply_text(f"✅ Специальный пользователь очереди '{queue_name}' изменён на @{username}")
     except Exception as e:
         await message.reply_text(f"❌ Не могу найти @{username}. Ошибка: {str(e)}")
@@ -321,9 +324,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for job in current_jobs:
             job.schedule_removal()
         
+        # Используем username специального пользователя
+        special_tag = f"@{queue.special_username}" if queue.special_username else f"<a href='tg://user?id={queue.special_user_id}'>Специальный пользователь</a>"
+        
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"🎉 <a href='tg://user?id={queue.special_user_id}'>Специальный пользователь</a>, "
+            text=f"🎉 {special_tag}, "
                  f"пользователь <a href='tg://user?id={user.id}'>{user.first_name}</a> "
                  f"откликнулся из очереди '{queue_name}'!",
             parse_mode=ParseMode.HTML,
@@ -342,7 +348,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Очередь не найдена")
             return
         
-        # ТОЛЬКО откликнувшийся может нажать
         if user.id != target_user_id:
             await query.answer("❌ Только откликнувшийся может подтвердить получение!", show_alert=True)
             return
@@ -355,10 +360,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await remove_user_from_queue(queue, user.id, context, reason="подарок получен")
         
         await query.edit_message_text(
-            f"🎁 {user.first_name} получил подарок и покинул очередь '{queue_name}'!",
+            f"🎁 {user.first_name} получил подарок и покинул очередь '{queue_name}'!\n"
+            f"Запускаю поиск следующего...",
             reply_markup=None
         )
         
+        # Сбрасываем флаг и запускаем поиск
+        queue.is_searching = False
+        queue.current_index = 0
         await start_queue_search(queue, context)
 
 async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -399,18 +408,19 @@ async def create_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Проверяем известных пользователей
     if username in KNOWN_USERS:
         special_user_id = KNOWN_USERS[username]
-        storage.create_queue(queue_name, chat_id, special_user_id)
+        queue = storage.create_queue(queue_name, chat_id, special_user_id)
+        queue.special_username = username
         await message.reply_text(f"✅ Очередь '{queue_name}' создана!\nСпециальный пользователь: @{username}\nИспользуйте /join {queue_name} для записи")
         return
     
     try:
         special_user = await context.bot.get_chat(f"@{username}")
         special_user_id = special_user.id
-        storage.create_queue(queue_name, chat_id, special_user_id)
+        queue = storage.create_queue(queue_name, chat_id, special_user_id)
+        queue.special_username = username
         await message.reply_text(f"✅ Очередь '{queue_name}' создана!\nСпециальный пользователь: @{username}\nИспользуйте /join {queue_name} для записи")
     except Exception as e:
         await message.reply_text(f"❌ Не могу найти @{username}. Ошибка: {str(e)}")
-
 
 async def start_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -473,6 +483,7 @@ async def queue_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"📋 Очередь '{queue_name}'\n"
         f"Статус: {status}\n"
+        f"Специальный пользователь: @{queue.special_username or 'не указан'}\n"
         f"Участники:\n" + ("\n".join(users_list) if users_list else "Пусто")
     )
 
@@ -487,14 +498,15 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 <b>Admin:</b>
 /create_queue (name) @user - create queue
+/setspecial (queue) @user - change special user
 """
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML)
 
 # ============ Запуск ============
 
 def main():
-    # ID администраторов (получите у @getmyid_bot)
-    storage.admins = {550712077}  # ЗАМЕНИТЕ НА СВОЙ ID
+    # ID администраторов
+    storage.admins = {550712077}
     
     application = Application.builder().token(os.getenv("BOT_TOKEN")).build()
     
