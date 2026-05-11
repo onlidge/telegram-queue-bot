@@ -373,7 +373,7 @@ async def create_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Специальный пользователь: @{username}\n"
             f"Используйте /join {queue_name} для записи"
         )
-        except Exception as e:
+    except Exception as e:
         await message.reply_text(
             f"❌ Ошибка поиска @{username}:\n"
             f"Тип: {type(e).__name__}\n"
