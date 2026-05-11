@@ -340,39 +340,45 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def create_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    message = update.effective_message
     
     if user_id not in storage.admins:
-        await update.message.reply_text("❌ Только администраторы могут создавать очереди")
+        await message.reply_text("❌ Только администраторы могут создавать очереди")
         return
     
     if not context.args or len(context.args) < 2:
-        await update.message.reply_text(
+        await message.reply_text(
             "Используйте: /create_queue <название> @username"
         )
         return
     
     queue_name = context.args[0]
-    special_user_mention = context.args[1]
-    
-    if not special_user_mention.startswith('@'):
-        await update.message.reply_text("Укажите пользователя через @username")
-        return
-    
+    special_user_str = context.args[1]
     chat_id = update.effective_chat.id
     
+    if not special_user_str.startswith('@'):
+        await message.reply_text("Укажите пользователя через @username")
+        return
+    
+    username = special_user_str[1:]
+    
     try:
-        special_user = await context.bot.get_chat(special_user_mention)
+        special_user = await context.bot.get_chat(f"@{username}")
         special_user_id = special_user.id
         
         storage.create_queue(queue_name, chat_id, special_user_id)
         
-        await update.message.reply_text(
+        await message.reply_text(
             f"✅ Очередь '{queue_name}' создана!\n"
-            f"Пользователи могут записаться: /join {queue_name}"
+            f"Специальный пользователь: @{username}\n"
+            f"Используйте /join {queue_name} для записи"
         )
     except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка: пользователь не найден или бот не может с ним взаимодействовать")
-
+        await message.reply_text(
+            f"❌ Не могу найти @{username}. Убедитесь что:\n"
+            f"1. Пользователь @{username} написал боту в личку\n"
+            f"2. Username написан правильно"
+        )
 async def start_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Используйте: /start_search <название_очереди>")
