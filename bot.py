@@ -373,11 +373,11 @@ async def create_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Специальный пользователь: @{username}\n"
             f"Используйте /join {queue_name} для записи"
         )
-    except Exception as e:
+        except Exception as e:
         await message.reply_text(
-            f"❌ Не могу найти @{username}. Убедитесь что:\n"
-            f"1. Пользователь @{username} написал боту в личку\n"
-            f"2. Username написан правильно"
+            f"❌ Ошибка поиска @{username}:\n"
+            f"Тип: {type(e).__name__}\n"
+            f"Текст: {str(e)}"
         )
 async def start_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
