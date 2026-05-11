@@ -439,15 +439,15 @@ async def queue_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
-🤖 <b>Бот управления очередями</b>
+<b>Queue Bot</b>
 
-<b>Основные команды:</b>
-/join <очередь> - записаться в очередь
-/start_search <очередь> - запустить поиск вручную
-/queue_info [очередь] - информация об очереди
+<b>Commands:</b>
+/join (queue) - join queue
+/start_search (queue) - manual search start
+/queue_info [queue] - queue info
 
-<b>Админ:</b>
-/create_queue <имя> @user - создать очередь
+<b>Admin:</b>
+/create_queue (name) @user - create queue
 """
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML)
 
